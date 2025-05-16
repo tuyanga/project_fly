@@ -1,0 +1,107 @@
+﻿@using Microsoft.AspNetCore.SignalR.Client;
+@page "/flights"
+@inject HttpClient Http
+
+<div class="container mt-5">
+    <div class="card shadow">
+        <div class="card-header bg-primary text-white">
+            <h3 class="mb-0">Flight Information</h3>
+        </div>
+        <div class="card-body">
+            @if (flights == null)
+            {
+                <div class="text-center text-muted">
+                    <em>Loading flight data...</em>
+                </div>
+            }
+            else if (flights.Count == 0)
+            {
+                <div class="alert alert-warning text-center">No flights available.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle text-center">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Flight Number</th>
+                                <th>Destination</th>
+                                <th>Departure Time</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var flight in flights)
+                            {
+                                <tr>
+                                    <td><strong>@flight.flightNumber</strong></td>
+                                    <td>@flight.destination</td>
+                                    <td>@flight.departureTime.ToLocalTime().ToString("g")</td>
+                                    <td>
+                                        <span class="badge">
+                                            @flight.status
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<FlightDto> flights;
+    private HubConnection hubConnection;
+
+    protected override async Task OnInitializedAsync()
+    {
+        flights = await Http.GetFromJsonAsync<List<FlightDto>>("http://localhost:5269/api/flights");
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl("http://localhost:5269/flightHub")
+            .WithAutomaticReconnect()
+            .Build();
+        hubConnection.On<int, string>("ReceiveFlightStatus", async (flightId, newStatus) =>
+        {
+            var flight = flights.FirstOrDefault(f => f.Id == flightId);
+
+            if (flight != null)
+            {
+                flight.status = newStatus;
+                Console.WriteLine($"SignalR: Broadcasted update for flight {flight.status} - {newStatus}");
+                await InvokeAsync(StateHasChanged);
+            }
+        });
+        await hubConnection.StartAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection != null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+
+
+    public class FlightDto
+    {
+        public int Id { get; set; }
+        public string flightNumber { get; set; }
+        public string destination { get; set; }
+        public DateTime departureTime { get; set; }
+        public string status { get; set; }
+    }
+
+    // private string GetStatusBadgeClass(string status) => status switch
+    // {
+    //     "Checking in" => "bg-info",
+    //     "Boarding" => "bg-warning text-dark",
+    //     "Departed" => "bg-success",
+    //     "Delayed" => "bg-danger",   
+    //     "Cancelled" => "bg-secondary",
+    //     _ => "bg-light text-dark"
+    // };
+}
